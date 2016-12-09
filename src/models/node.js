@@ -121,78 +121,6 @@ const Node = {
   },
 
   /**
-   * Concat children `nodes` on to the end of the node.
-   *
-   * @param {List<Node>} nodes
-   * @return {Node}
-   */
-
-  concatChildren(nodes) {
-    nodes = this.nodes.concat(nodes)
-    return this.merge({ nodes })
-  },
-
-  /**
-   * Decorate all of the text nodes with a `decorator` function.
-   *
-   * @param {Function} decorator
-   * @return {Node}
-   */
-
-  decorateTexts(decorator) {
-    return this.mapDescendants((child) => {
-      return child.kind == 'text'
-        ? child.decorateCharacters(decorator)
-        : child
-    })
-  },
-
-  /**
-   * Recursively find all descendant nodes by `iterator`. Breadth first.
-   *
-   * @param {Function} iterator
-   * @return {Node|Null}
-   */
-
-  findDescendant(iterator) {
-    const childFound = this.nodes.find(iterator)
-    if (childFound) return childFound
-
-    let descendantFound = null
-
-    this.nodes.find(node => {
-      if (node.kind != 'text') {
-        descendantFound = node.findDescendant(iterator)
-        return descendantFound
-      } else {
-        return false
-      }
-    })
-
-    return descendantFound
-  },
-
-  /**
-   * Recursively find all descendant nodes by `iterator`. Depth first.
-   *
-   * @param {Function} iterator
-   * @return {Node|Null}
-   */
-
-  findDescendantDeep(iterator) {
-    let found
-
-    this.forEachDescendant(node => {
-      if (iterator(node)) {
-        found = node
-        return false
-      }
-    })
-
-    return found
-  },
-
-  /**
    * Recursively iterate over all descendant nodes with `iterator`.
    *
    * @param {Function} iterator
@@ -215,39 +143,6 @@ const Node = {
     })
 
     return ret
-  },
-
-  /**
-   * Recursively filter all descendant nodes with `iterator`.
-   *
-   * @param {Function} iterator
-   * @return {List<Node>}
-   */
-
-  filterDescendants(iterator) {
-    const matches = []
-
-    this.forEachDescendant((child, i, nodes) => {
-      if (iterator(child, i, nodes)) matches.push(child)
-    })
-
-    return List(matches)
-  },
-
-  /**
-   * Recursively filter all descendant nodes with `iterator`, depth-first.
-   * It is different from `filterDescendants` in regard of the order of results.
-   *
-   * @param {Function} iterator
-   * @return {List<Node>}
-   */
-
-  filterDescendantsDeep(iterator) {
-    return this.nodes.reduce((matches, child, i, nodes) => {
-      if (child.kind != 'text') matches = matches.concat(child.filterDescendantsDeep(iterator))
-      if (iterator(child, i, nodes)) matches = matches.push(child)
-      return matches
-    }, Block.createList())
   },
 
   /**
@@ -291,22 +186,6 @@ const Node = {
         const chars = text.characters.filter((char, i) => isInRange(i, text, range))
         return characters.concat(chars)
       }, Character.createList())
-  },
-
-  /**
-   * Get children between two child keys.
-   *
-   * @param {String} start
-   * @param {String} end
-   * @return {Node}
-   */
-
-  getChildrenBetween(start, end) {
-    start = this.assertChild(start)
-    start = this.nodes.indexOf(start)
-    end = this.assertChild(end)
-    end = this.nodes.indexOf(end)
-    return this.nodes.slice(start + 1, end)
   },
 
   /**
@@ -651,25 +530,6 @@ const Node = {
   },
 
   /**
-   * Get the highest parent of a node by `key` which has an only child.
-   *
-   * @param {String} key
-   * @return {Node|Null}
-   */
-
-  getHighestOnlyChildParent(key) {
-    let child = this.assertDescendant(key)
-    let match = null
-    let parent
-
-    while (parent = this.getParent(child)) {
-      if (parent == null || parent.nodes.size > 1) return match
-      match = parent
-      child = parent
-    }
-  },
-
-  /**
    * Get the furthest inline nodes for each text node in the node.
    *
    * @return {List<Node>}
@@ -825,24 +685,6 @@ const Node = {
     return this.hasChild(key)
       ? offset
       : offset + child.getOffset(key)
-  },
-
-  /**
-   * Get the offset from a `range`.
-   *
-   * @param {Selection} range
-   * @return {Number}
-   */
-
-  getOffsetAtRange(range) {
-    range = range.normalize(this)
-
-    if (range.isExpanded) {
-      throw new Error('The range must be collapsed to calculcate its offset.')
-    }
-
-    const { startKey, startOffset } = range
-    return this.getOffset(startKey) + startOffset
   },
 
   /**
@@ -1170,22 +1012,6 @@ const Node = {
   },
 
   /**
-   * Check if the inline nodes are split at a `range`.
-   *
-   * @param {Selection} range
-   * @return {Boolean}
-   */
-
-  isInlineSplitAtRange(range) {
-    range = range.normalize(this)
-    if (range.isExpanded) throw new Error()
-
-    const { startKey } = range
-    const start = this.getFurthestInline(startKey) || this.getDescendant(startKey)
-    return range.isAtStartOf(start) || range.isAtEndOf(start)
-  },
-
-  /**
    * Join a children node `first` with another children node `second`.
    * `first` and `second` will be concatenated in that order.
    * `first` and `second` must be two Nodes or two Text.
@@ -1226,25 +1052,6 @@ const Node = {
     node = isParent ? parent : node.updateDescendant(parent)
     node = node.updateDescendant(first)
     return node
-  },
-
-  /**
-   * Map all child nodes, updating them in their parents. This method is
-   * optimized to not return a new node if no changes are made.
-   *
-   * @param {Function} iterator
-   * @return {Node}
-   */
-
-  mapChildren(iterator) {
-    let nodes = this.nodes
-
-    nodes.forEach((node, i) => {
-      let ret = iterator(node, i, this.nodes)
-      if (ret != node) nodes = nodes.set(ret.key, ret)
-    })
-
-    return this.merge({ nodes })
   },
 
   /**
@@ -1500,7 +1307,6 @@ memoize(Node, [
   'getFurthestBlock',
   'getFurthestInline',
   'getHighestChild',
-  'getHighestOnlyChildParent',
   'getInlinesAtRange',
   'getLastText',
   'getMarksAtRange',
@@ -1509,7 +1315,6 @@ memoize(Node, [
   'getNextText',
   'getNode',
   'getOffset',
-  'getOffsetAtRange',
   'getParent',
   'getPreviousBlock',
   'getPreviousSibling',
@@ -1519,7 +1324,6 @@ memoize(Node, [
   '_getTexts',
   'getTextsAtRange',
   'hasVoidParent',
-  'isInlineSplitAtRange',
   'validate'
 ])
 
