@@ -54,15 +54,10 @@ class Range extends new Record(DEFAULTS) {
 
   getCharacters() {
     const { marks } = this
-
-    return Character.createList(this.text
+    const chars = this.text
       .split('')
-      .map((char) => {
-        return Character.create({
-          text: char,
-          marks
-        })
-      }))
+      .map(text => Character.create({ text, marks }))
+    return Character.createList(chars)
   }
 }
 
