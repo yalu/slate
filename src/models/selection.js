@@ -266,11 +266,7 @@ class Selection extends new Record(DEFAULTS) {
    */
 
   isAtStartOf(node) {
-    const { isExpanded, startKey, startOffset } = this
-    if (isExpanded) return false
-    if (startOffset != 0) return false
-    const first = node.kind == 'text' ? node : node.getFirstText()
-    return startKey == first.key
+    return this.isCollapsed && this.hasAnchorAtStartOf(node)
   }
 
   /**
@@ -281,80 +277,7 @@ class Selection extends new Record(DEFAULTS) {
    */
 
   isAtEndOf(node) {
-    const { endKey, endOffset, isExpanded } = this
-    if (isExpanded) return false
-    const last = node.kind == 'text' ? node : node.getLastText()
-    return endKey == last.key && endOffset == last.length
-  }
-
-  /**
-   * Normalize the selection, relative to a `node`, ensuring that the anchor
-   * and focus nodes of the selection always refer to leaf text nodes.
-   *
-   * @param {Node} node
-   * @return {Selection}
-   */
-
-  normalize(node) {
-    let selection = this
-    let { anchorKey, anchorOffset, focusKey, focusOffset, isBackward } = selection
-
-    // If the selection isn't formed yet or is malformed, ensure that it is
-    // properly zeroed out.
-    if (
-      anchorKey == null ||
-      focusKey == null ||
-      !node.hasDescendant(anchorKey) ||
-      !node.hasDescendant(focusKey)
-    ) {
-      return selection.merge({
-        anchorKey: null,
-        anchorOffset: 0,
-        focusKey: null,
-        focusOffset: 0,
-        isBackward: false
-      })
-    }
-
-    // Get the anchor and focus nodes.
-    let anchorNode = node.getDescendant(anchorKey)
-    let focusNode = node.getDescendant(focusKey)
-
-    // If the anchor node isn't a text node, match it to one.
-    if (anchorNode.kind != 'text') {
-      warn('The selection anchor was set to a Node that is not a Text node. This should not happen and can degrade performance. The node in question was:', anchorNode)
-      let anchorText = anchorNode.getTextAtOffset(anchorOffset)
-      let offset = anchorNode.getOffset(anchorText)
-      anchorOffset = anchorOffset - offset
-      anchorNode = anchorText
-    }
-
-    // If the focus node isn't a text node, match it to one.
-    if (focusNode.kind != 'text') {
-      warn('The selection focus was set to a Node that is not a Text node. This should not happen and can degrade performance. The node in question was:', focusNode)
-      let focusText = focusNode.getTextAtOffset(focusOffset)
-      let offset = focusNode.getOffset(focusText)
-      focusOffset = focusOffset - offset
-      focusNode = focusText
-    }
-
-    // If `isBackward` is not set, derive it.
-    if (isBackward == null) {
-      if (anchorNode.key === focusNode.key) {
-        isBackward = anchorOffset > focusOffset
-      } else {
-        isBackward = !node.areDescendantSorted(anchorNode.key, focusNode.key)
-      }
-    }
-
-    // Merge in any updated properties.
-    return selection.merge({
-      anchorKey: anchorNode.key,
-      anchorOffset,
-      focusKey: focusNode.key,
-      focusOffset,
-      isBackward
-    })
+    return this.isCollapsed && this.hasAnchorAtEndOf(node)
   }
 
   /**
@@ -382,17 +305,61 @@ class Selection extends new Record(DEFAULTS) {
   }
 
   /**
+   * Move the selection's anchor point to a `key` and `offset`.
+   *
+   * @param {String} key
+   * @param {Number} offset
+   * @return {Selection}
+   */
+
+  moveAnchorTo(key, offset) {
+    const { isBackward, focusKey, focusOffset } = this
+    return this.merge({
+      anchorKey: key,
+      anchorOffset: offset,
+      isBackward: key == focusKey ? (offset > focusOffset) : isBackward
+    })
+  }
+
+  /**
+   * Move the selection's focus point to a `key` and `offset`.
+   *
+   * @param {String} key
+   * @param {Number} offset
+   * @return {Selection}
+   */
+
+  moveFocusTo(key, offset) {
+    const { isBackward, anchorKey, anchorOffset } = this
+    return this.merge({
+      focusKey: key,
+      focusOffset: offset,
+      isBackward: key == anchorKey ? (anchorOffset > offset) : isBackward
+    })
+  }
+
+  /**
+   * Collapse the selection to a `key` and `offset`.
+   *
+   * @param {String} key
+   * @param {Number} offset
+   * @return {Selection}
+   */
+
+  collapseTo(key, offset) {
+    return this
+      .moveAnchorTo(key, offset)
+      .moveFocusTo(key, offset)
+  }
+
+  /**
    * Move the focus point to the anchor point.
    *
    * @return {Selection}
    */
 
   collapseToAnchor() {
-    return this.merge({
-      focusKey: this.anchorKey,
-      focusOffset: this.anchorOffset,
-      isBackward: false
-    })
+    return this.moveFocusTo(this.anchorKey, this.anchorOffset)
   }
 
   /**
@@ -402,11 +369,7 @@ class Selection extends new Record(DEFAULTS) {
    */
 
   collapseToFocus() {
-    return this.merge({
-      anchorKey: this.focusKey,
-      anchorOffset: this.focusOffset,
-      isBackward: false
-    })
+    return this.moveAnchorTo(this.focusKey, this.focusOffset)
   }
 
   /**
@@ -418,14 +381,7 @@ class Selection extends new Record(DEFAULTS) {
 
   collapseToStartOf(node) {
     node = getLeafText(node)
-
-    return this.merge({
-      anchorKey: node.key,
-      anchorOffset: 0,
-      focusKey: node.key,
-      focusOffset: 0,
-      isBackward: false
-    })
+    return this.collapseTo(node.key, 0)
   }
 
   /**
@@ -436,14 +392,7 @@ class Selection extends new Record(DEFAULTS) {
 
   collapseToEndOf(node) {
     node = getLeafText(node)
-
-    return this.merge({
-      anchorKey: node.key,
-      anchorOffset: node.length,
-      focusKey: node.key,
-      focusOffset: node.length,
-      isBackward: false
-    })
+    return this.collapseTo(node.key, node.length)
   }
 
   /**
@@ -469,79 +418,28 @@ class Selection extends new Record(DEFAULTS) {
   }
 
   /**
-   * Move the selection forward `n` characters.
+   * Move the selection's offsets `n` characters.
    *
-   * @param {Number} n (optional)
+   * @param {Number} n
    * @return {Selection}
    */
 
-  moveForward(n = 1) {
+  move(n) {
     return this.merge({
       anchorOffset: this.anchorOffset + n,
-      focusOffset: this.focusOffset + n
-    })
-  }
-
-  /**
-   * Move the selection backward `n` characters.
-   *
-   * @param {Number} n (optional)
-   * @return {Selection}
-   */
-
-  moveBackward(n = 1) {
-    return this.merge({
-      anchorOffset: this.anchorOffset - n,
-      focusOffset: this.focusOffset - n
-    })
-  }
-
-  /**
-   * Move the selection to `anchor` and `focus` offsets.
-   *
-   * @param {Number} anchor
-   * @param {Number} focus (optional)
-   * @return {Selection}
-   */
-
-  moveToOffsets(anchor, focus = anchor) {
-    const props = {}
-    props.anchorOffset = anchor
-    props.focusOffset = focus
-
-    if (this.anchorKey == this.focusKey) {
-      props.isBackward = anchor > focus
-    }
-
-    return this.merge(props)
-  }
-
-  /**
-   * Extend the focus point forward `n` characters.
-   *
-   * @param {Number} n (optional)
-   * @return {Selection}
-   */
-
-  extendForward(n = 1) {
-    return this.merge({
       focusOffset: this.focusOffset + n,
-      isBackward: null
     })
   }
 
   /**
-   * Extend the focus point backward `n` characters.
+   * Extend the selection's focus offset `n` characters.
    *
-   * @param {Number} n (optional)
-   * @return {Selection}
+   * @param {Number} n
+   * @param {Selection}
    */
 
-  extendBackward(n = 1) {
-    return this.merge({
-      focusOffset: this.focusOffset - n,
-      isBackward: null
-    })
+  extend(n) {
+    return this.moveFocusOffset(n)
   }
 
   /**
@@ -653,6 +551,22 @@ class Selection extends new Record(DEFAULTS) {
   }
 
   /**
+   * Flip the selection.
+   *
+   * @return {Selection}
+   */
+
+  flip() {
+    return this.merge({
+      anchorKey: this.focusKey,
+      anchorOffset: this.focusOffset,
+      focusKey: this.anchorKey,
+      focusOffset: this.anchorOffset,
+      isBackward: this.isBackward == null ? null : !this.isBackward,
+    })
+  }
+
+  /**
    * Unset the selection
    *
    * @return {Selection}
@@ -670,18 +584,158 @@ class Selection extends new Record(DEFAULTS) {
   }
 
   /**
-   * Flip the selection.
+   * Normalize the selection, relative to a `node`, ensuring that the anchor
+   * and focus nodes of the selection always refer to leaf text nodes.
    *
+   * @param {Node} node
    * @return {Selection}
    */
 
-  flip() {
+  normalize(node) {
+    let selection = this
+    let { anchorKey, anchorOffset, focusKey, focusOffset, isBackward } = selection
+
+    // If the selection isn't formed yet or is malformed, ensure that it is
+    // properly zeroed out.
+    if (
+      anchorKey == null ||
+      focusKey == null ||
+      !node.hasDescendant(anchorKey) ||
+      !node.hasDescendant(focusKey)
+    ) {
+      return selection.merge({
+        anchorKey: null,
+        anchorOffset: 0,
+        focusKey: null,
+        focusOffset: 0,
+        isBackward: false
+      })
+    }
+
+    // Get the anchor and focus nodes.
+    let anchorNode = node.getDescendant(anchorKey)
+    let focusNode = node.getDescendant(focusKey)
+
+    // If the anchor node isn't a text node, match it to one.
+    if (anchorNode.kind != 'text') {
+      warn('The selection anchor was set to a Node that is not a Text node. This should not happen and can degrade performance. The node in question was:', anchorNode)
+      let anchorText = anchorNode.getTextAtOffset(anchorOffset)
+      let offset = anchorNode.getOffset(anchorText)
+      anchorOffset = anchorOffset - offset
+      anchorNode = anchorText
+    }
+
+    // If the focus node isn't a text node, match it to one.
+    if (focusNode.kind != 'text') {
+      warn('The selection focus was set to a Node that is not a Text node. This should not happen and can degrade performance. The node in question was:', focusNode)
+      let focusText = focusNode.getTextAtOffset(focusOffset)
+      let offset = focusNode.getOffset(focusText)
+      focusOffset = focusOffset - offset
+      focusNode = focusText
+    }
+
+    // If `isBackward` is not set, derive it.
+    if (isBackward == null) {
+      if (anchorNode.key === focusNode.key) {
+        isBackward = anchorOffset > focusOffset
+      } else {
+        isBackward = !node.areDescendantSorted(anchorNode.key, focusNode.key)
+      }
+    }
+
+    // Merge in any updated properties.
+    return selection.merge({
+      anchorKey: anchorNode.key,
+      anchorOffset,
+      focusKey: focusNode.key,
+      focusOffset,
+      isBackward
+    })
+  }
+
+  /**
+   * Move the selection forward `n` characters.
+   *
+   * @param {Number} n (optional)
+   * @return {Selection}
+   */
+
+  moveForward(n = 1) {
+    warn('Deprecated: The `Selection.moveForward` method has been deprecated in favor of `Selection.move`.')
+
     return this.merge({
-      anchorKey: this.focusKey,
-      anchorOffset: this.focusOffset,
-      focusKey: this.anchorKey,
-      focusOffset: this.anchorOffset,
-      isBackward: this.isBackward == null ? null : !this.isBackward,
+      anchorOffset: this.anchorOffset + n,
+      focusOffset: this.focusOffset + n
+    })
+  }
+
+  /**
+   * Move the selection backward `n` characters.
+   *
+   * @param {Number} n (optional)
+   * @return {Selection}
+   */
+
+  moveBackward(n = 1) {
+    warn('Deprecated: The `Selection.moveBackward` method has been deprecated in favor of passing a negative number to `Selection.move`.')
+
+    return this.merge({
+      anchorOffset: this.anchorOffset - n,
+      focusOffset: this.focusOffset - n
+    })
+  }
+
+  /**
+   * Move the selection to `anchor` and `focus` offsets.
+   *
+   * @param {Number} anchor
+   * @param {Number} focus (optional)
+   * @return {Selection}
+   */
+
+  moveToOffsets(anchor, focus = anchor) {
+    warn('Deprecated: The `Selection.moveToOffsets` method has been deprecated.')
+
+    const props = {}
+    props.anchorOffset = anchor
+    props.focusOffset = focus
+
+    if (this.anchorKey == this.focusKey) {
+      props.isBackward = anchor > focus
+    }
+
+    return this.merge(props)
+  }
+
+  /**
+   * Extend the focus point forward `n` characters.
+   *
+   * @param {Number} n (optional)
+   * @return {Selection}
+   */
+
+  extendForward(n = 1) {
+    warn('Deprecated: The `Selection.extendForward` method has been deprecated in favor of `Selection.extend`.')
+
+    return this.merge({
+      focusOffset: this.focusOffset + n,
+      isBackward: null
+    })
+  }
+
+  /**
+   * Extend the focus point backward `n` characters.
+   *
+   * @param {Number} n (optional)
+   * @return {Selection}
+   */
+
+  extendBackward(n = 1) {
+    warn('Deprecated: The `Selection.extendBackward` method has been deprecated in favor of passing a negative number to `Selection.extend`.')
+
+    return this.merge({
+      focusOffset: this.focusOffset - n,
+      isBackward: null
     })
   }
 
